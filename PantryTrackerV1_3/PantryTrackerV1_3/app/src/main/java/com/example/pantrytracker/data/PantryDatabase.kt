@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PantryItem::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class PantryDatabase : RoomDatabase() {
@@ -32,6 +32,12 @@ abstract class PantryDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pantry_items ADD COLUMN imageUrl TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): PantryDatabase {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -39,7 +45,7 @@ abstract class PantryDatabase : RoomDatabase() {
                     PantryDatabase::class.java,
                     "pantry_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }
