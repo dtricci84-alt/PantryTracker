@@ -28,6 +28,10 @@ jobs:
         working-directory: PantryTrackerV1_3/PantryTrackerV1_3
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Apply Compose compatibility fix
+        working-directory: PantryTrackerV1_3/PantryTrackerV1_3
+        run: sed -i '/import androidx.compose.foundation.layout.weight/d' app/src/main/java/com/example/pantrytracker/ui/PantryApp.kt
+
       - name: Build debug APK
         working-directory: PantryTrackerV1_3/PantryTrackerV1_3
         run: gradle --no-daemon --stacktrace assembleDebug
