@@ -7,11 +7,11 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface OpenFoodFactsApi {
-    @Headers("User-Agent: PantryTracker/1.2 (Android)")
+    @Headers("User-Agent: PantryTracker/1.4 (Android)")
     @GET("api/v2/product/{barcode}.json")
     suspend fun getProduct(
         @Path("barcode") barcode: String,
-        @Query("fields") fields: String = "code,product_name,brands,quantity,categories"
+        @Query("fields") fields: String = "code,product_name,brands,quantity,categories,image_front_url"
     ): OpenFoodFactsResponse
 }
 
@@ -28,5 +28,7 @@ data class OpenFoodFactsProduct(
     val productName: String? = null,
     val brands: String? = null,
     val quantity: String? = null,
-    val categories: String? = null
+    val categories: String? = null,
+    @SerializedName("image_front_url")
+    val imageFrontUrl: String? = null
 )
