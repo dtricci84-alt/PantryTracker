@@ -7,7 +7,8 @@ data class ProductLookupData(
     val name: String,
     val brand: String,
     val packageSize: String,
-    val category: String
+    val category: String,
+    val imageUrl: String
 )
 
 sealed interface ProductLookupResult {
@@ -42,6 +43,7 @@ class ProductLookupService(
                     .filter { it.isNotBlank() }
                     .lastOrNull()
                     .orEmpty()
+                val imageUrl = product.imageFrontUrl.orEmpty().trim()
 
                 if (name.isBlank() && brand.isBlank() && packageSize.isBlank() && category.isBlank()) {
                     ProductLookupResult.NotFound
@@ -51,7 +53,8 @@ class ProductLookupService(
                             name = name,
                             brand = brand,
                             packageSize = packageSize,
-                            category = category
+                            category = category,
+                            imageUrl = imageUrl
                         )
                     )
                 }
