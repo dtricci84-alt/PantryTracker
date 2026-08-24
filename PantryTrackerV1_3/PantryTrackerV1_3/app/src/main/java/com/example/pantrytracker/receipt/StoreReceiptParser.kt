@@ -44,7 +44,7 @@ internal object StoreReceiptParser {
             Regex("\\bedeka\\b").containsMatchIn(value) -> ReceiptStore.EDEKA
             Regex("\\blidl\\b").containsMatchIn(value) -> ReceiptStore.LIDL
             Regex("\\baldi(?:\\s+s[uü]d|\\s+nord)?\\b").containsMatchIn(value) -> ReceiptStore.ALDI
-            "albert heijn" in value || Regex("\\bah\\b").containsMatchIn(value) && "bonus" in value -> ReceiptStore.ALBERT_HEIJN
+            "albert heijn" in value || (Regex("\\bah\\b").containsMatchIn(value) && "bonus" in value) -> ReceiptStore.ALBERT_HEIJN
             Regex("\\bcarrefour\\b").containsMatchIn(value) -> ReceiptStore.CARREFOUR
             Regex("\\bwalmart\\b").containsMatchIn(value) -> ReceiptStore.WALMART
             Regex("\\bcostco\\b").containsMatchIn(value) -> ReceiptStore.COSTCO
@@ -94,7 +94,8 @@ internal object StoreReceiptParser {
             "bedankt", "merci", "customer", "kunde", "klant", "client", "filiale", "store", "branch"
         )
         if (stopWords.any { it in lower }) return true
-        if (Regex("\\b\\d{1,2}[:.]\\d{2}\\b").containsMatchIn(original)) return true
+        // Receipt prices such as 1.48 must not be confused with times. Only HH:MM is treated as a time here.
+        if (Regex("\\b\\d{1,2}:\\d{2}\\b").containsMatchIn(original)) return true
         if (Regex("\\b\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}\\b").containsMatchIn(original)) return true
         if (Regex("^[0-9 .,:/-]+$").matches(original)) return true
         return false
@@ -119,7 +120,6 @@ internal object StoreReceiptParser {
         var result = value
         result = result.replace(Regex("\\s+[€$£]?\\s*[-+]?\\d+[.,]\\d{2}\\s*[A-Za-z]?\\s*$"), "")
         result = result.replace(Regex("\\s+[-+]?\\d+[.,]\\d{2}\\s*[€$£]\\s*$"), "")
-        result = result.replace(Regex("\\s+[A-Z]\\s*$"), "")
 
         if (store == ReceiptStore.WALMART || store == ReceiptStore.COSTCO) {
             result = result.replace(Regex("^\\s*\\d{5,14}\\s+"), "")
