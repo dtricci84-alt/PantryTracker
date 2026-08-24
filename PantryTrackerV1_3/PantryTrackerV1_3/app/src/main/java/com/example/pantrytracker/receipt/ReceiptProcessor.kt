@@ -19,6 +19,7 @@ data class ReceiptCandidate(
 
 data class ReceiptScanResult(
     val sourceLanguage: String,
+    val storeName: String,
     val candidates: List<ReceiptCandidate>
 )
 
@@ -36,8 +37,8 @@ class ReceiptProcessor {
                     return@addOnSuccessListener
                 }
 
-                val parsed = parseReceiptLines(rawText)
-                if (parsed.isEmpty()) {
+                val storeParse = StoreReceiptParser.parse(rawText)
+                if (storeParse.lines.isEmpty()) {
                     onResult(Result.failure(IllegalStateException("No likely grocery items were found on the receipt.")))
                     return@addOnSuccessListener
                 }
@@ -50,14 +51,20 @@ class ReceiptProcessor {
                                 Result.success(
                                     ReceiptScanResult(
                                         sourceLanguage = normalized ?: "unknown",
-                                        candidates = parsed.map {
+                                        storeName = storeParse.store.displayName,
+                                        candidates = storeParse.lines.map {
                                             ReceiptCandidate(it.name, it.name, it.quantity)
                                         }
                                     )
                                 )
                             )
                         } else {
-                            translateCandidates(normalized, parsed, onResult)
+                            translateCandidates(
+                                sourceLanguage = normalized,
+                                storeName = storeParse.store.displayName,
+                                parsed = storeParse.lines,
+                                onResult = onResult
+                            )
                         }
                     }
                     .addOnFailureListener {
@@ -65,7 +72,10 @@ class ReceiptProcessor {
                             Result.success(
                                 ReceiptScanResult(
                                     sourceLanguage = "unknown",
-                                    candidates = parsed.map { ReceiptCandidate(it.name, it.name, it.quantity) }
+                                    storeName = storeParse.store.displayName,
+                                    candidates = storeParse.lines.map {
+                                        ReceiptCandidate(it.name, it.name, it.quantity)
+                                    }
                                 )
                             )
                         )
@@ -76,7 +86,8 @@ class ReceiptProcessor {
 
     private fun translateCandidates(
         sourceLanguage: String,
-        parsed: List<ParsedLine>,
+        storeName: String,
+        parsed: List<StoreParsedLine>,
         onResult: (Result<ReceiptScanResult>) -> Unit
     ) {
         val source = when (sourceLanguage) {
@@ -91,6 +102,7 @@ class ReceiptProcessor {
                 Result.success(
                     ReceiptScanResult(
                         sourceLanguage = sourceLanguage,
+                        storeName = storeName,
                         candidates = parsed.map { ReceiptCandidate(it.name, it.name, it.quantity) }
                     )
                 )
@@ -111,7 +123,7 @@ class ReceiptProcessor {
                 fun translateAt(index: Int) {
                     if (index >= parsed.size) {
                         translator.close()
-                        onResult(Result.success(ReceiptScanResult(sourceLanguage, output)))
+                        onResult(Result.success(ReceiptScanResult(sourceLanguage, storeName, output)))
                         return
                     }
                     val item = parsed[index]
@@ -133,7 +145,13 @@ class ReceiptProcessor {
             }
             .addOnFailureListener {
                 translator.close()
-                onResult(Result.failure(IllegalStateException("The translation model could not be downloaded. Check your internet connection and try again.")))
+                onResult(
+                    Result.failure(
+                        IllegalStateException(
+                            "The translation model could not be downloaded. Check your internet connection and try again."
+                        )
+                    )
+                )
             }
     }
 
@@ -145,57 +163,5 @@ class ReceiptProcessor {
             "fr" -> "fr"
             else -> null
         }
-    }
-
-    private data class ParsedLine(val name: String, val quantity: Double)
-
-    private fun parseReceiptLines(text: String): List<ParsedLine> {
-        return text.lineSequence()
-            .map { it.trim() }
-            .mapNotNull(::parseLikelyProductLine)
-            .distinctBy { it.name.lowercase() }
-            .take(60)
-            .toList()
-    }
-
-    private fun parseLikelyProductLine(line: String): ParsedLine? {
-        if (line.length < 2) return null
-        if (!line.any(Char::isLetter)) return null
-
-        val lower = line.lowercase()
-        val stopWords = listOf(
-            "total", "subtotal", "summe", "gesamt", "zwischensumme", "totaal", "subtotaal",
-            "tax", "vat", "mwst", "steuer", "btw", "tva", "change", "cash", "card", "visa",
-            "mastercard", "payment", "zahlung", "betaling", "paiement", "discount", "rabatt",
-            "korting", "remise", "coupon", "bon", "receipt", "kassenbon", "beleg", "ticket",
-            "datum", "date", "tijd", "time", "heure", "tel", "phone", "www", "thank", "danke",
-            "bedankt", "merci"
-        )
-        if (stopWords.any { it in lower }) return null
-
-        if (Regex("\\b\\d{1,2}[:.]\\d{2}\\b").containsMatchIn(line)) return null
-        if (Regex("\\b\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}\\b").containsMatchIn(line)) return null
-
-        var quantity = 1.0
-        var name = line
-
-        val qtyMatch = Regex("^\\s*(\\d+(?:[.,]\\d+)?)\\s*[xX*]\\s+(.+)$").find(name)
-        if (qtyMatch != null) {
-            quantity = qtyMatch.groupValues[1].replace(',', '.').toDoubleOrNull() ?: 1.0
-            name = qtyMatch.groupValues[2]
-        }
-
-        name = name
-            .replace(Regex("\\s+[€$£]?\\s*\\d+[.,]\\d{2}\\s*[A-Za-z]?\\s*$"), "")
-            .replace(Regex("\\s+\\d+[.,]\\d{2}\\s*[€$£]\\s*$"), "")
-            .replace(Regex("^[-*#]+\\s*"), "")
-            .replace(Regex("\\s{2,}"), " ")
-            .trim(' ', '-', ':', '.')
-
-        if (name.length < 2) return null
-        if (!name.any(Char::isLetter)) return null
-        if (name.count(Char::isLetter) < 2) return null
-
-        return ParsedLine(name = name, quantity = quantity.coerceAtLeast(1.0))
     }
 }
