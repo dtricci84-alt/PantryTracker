@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.pantrytracker.data.PantryItem
 import com.example.pantrytracker.data.PantryRepository
+import com.example.pantrytracker.data.StorageLocation
 import com.example.pantrytracker.network.ProductLookupResult
 import com.example.pantrytracker.network.ProductLookupService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,13 @@ class PantryViewModel(
 ) : ViewModel() {
     private val _duplicateMatch = MutableStateFlow<PantryItem?>(null)
     val duplicateMatch: StateFlow<PantryItem?> = _duplicateMatch.asStateFlow()
+
+    val items: StateFlow<List<PantryItem>> = repository.items
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
 
     fun checkForDuplicateBarcode(barcode: String) {
         if (barcode.isBlank()) {
@@ -42,17 +50,26 @@ class PantryViewModel(
         }
     }
 
-
-    val items: StateFlow<List<PantryItem>> = repository.items
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyList()
-        )
-
     fun save(item: PantryItem) {
         viewModelScope.launch {
             repository.save(item)
+        }
+    }
+
+    fun addVoiceItems(names: List<String>, location: StorageLocation) {
+        val cleaned = names.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (cleaned.isEmpty()) return
+        viewModelScope.launch {
+            cleaned.forEach { name ->
+                repository.save(
+                    PantryItem(
+                        name = name,
+                        quantity = 1.0,
+                        unit = "item",
+                        location = location.name
+                    )
+                )
+            }
         }
     }
 

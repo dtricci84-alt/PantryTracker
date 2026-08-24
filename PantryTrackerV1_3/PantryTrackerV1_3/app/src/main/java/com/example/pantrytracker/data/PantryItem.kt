@@ -18,7 +18,8 @@ data class PantryItem(
     val notes: String = "",
     val barcode: String = "",
     val brand: String = "",
-    val packageSize: String = ""
+    val packageSize: String = "",
+    val imageUrl: String = ""
 ) {
     fun needsRestock(): Boolean = quantity <= minimumQuantity
 }
@@ -26,6 +27,7 @@ data class PantryItem(
 enum class StorageLocation(val label: String) {
     PANTRY("Pantry"),
     FRIDGE("Fridge"),
-    FREEZER("Freezer"),
-    OTHER("Other")
+    COUNTERTOP("Countertop"),
+    OTHER("Other"),
+    FREEZER("Freezer") // Kept for compatibility with V1.0-V1.3 data.
 }
