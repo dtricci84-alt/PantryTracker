@@ -60,6 +60,7 @@ private data class ReceiptEdit(
     val name: String,
     val quantity: String,
     val location: StorageLocation,
+    val autoClassified: Boolean,
     val selected: Boolean = true
 )
 
@@ -110,11 +111,13 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
                         scanResult = parsed
                         edits = parsed.candidates.map {
                             val displayName = it.translatedName.ifBlank { it.originalName }
+                            val classified = StorageSuggester.classify(displayName)
                             ReceiptEdit(
                                 original = it.originalName,
                                 name = displayName,
                                 quantity = formatReceiptQuantity(it.quantity),
-                                location = StorageSuggester.suggest(displayName)
+                                location = classified ?: fallbackLocation,
+                                autoClassified = classified != null
                             )
                         }
                     }.onFailure {
@@ -183,7 +186,12 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
             result = result,
             edits = edits,
             fallbackLocation = fallbackLocation,
-            onFallbackLocationChanged = { fallbackLocation = it },
+            onFallbackLocationChanged = { selected ->
+                fallbackLocation = selected
+                edits = edits.map { edit ->
+                    if (!edit.autoClassified) edit.copy(location = selected) else edit
+                }
+            },
             onEditChanged = { index, updated ->
                 edits = edits.toMutableList().also { it[index] = updated }
             },
@@ -249,7 +257,7 @@ private fun ReceiptReviewDialog(
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                Text("Fallback for unknown items", fontWeight = FontWeight.Bold)
+                Text("Fallback for unrecognized items", fontWeight = FontWeight.Bold)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -283,13 +291,13 @@ private fun ReceiptReviewDialog(
                                 OutlinedTextField(
                                     value = edit.name,
                                     onValueChange = { value ->
-                                        val oldSuggestion = StorageSuggester.suggest(edit.name)
-                                        val newSuggestion = StorageSuggester.suggest(value)
+                                        val classified = StorageSuggester.classify(value)
                                         onEditChanged(
                                             index,
                                             edit.copy(
                                                 name = value,
-                                                location = if (edit.location == oldSuggestion) newSuggestion else edit.location
+                                                location = if (edit.autoClassified) classified ?: fallbackLocation else edit.location,
+                                                autoClassified = if (edit.autoClassified) classified != null else false
                                             )
                                         )
                                     },
@@ -311,7 +319,7 @@ private fun ReceiptReviewDialog(
                         }
 
                         Text(
-                            "Storage",
+                            if (edit.autoClassified) "Suggested storage" else "Storage",
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(start = 48.dp, top = 4.dp)
                         )
@@ -324,7 +332,12 @@ private fun ReceiptReviewDialog(
                             receiptLocations.forEach { option ->
                                 FilterChip(
                                     selected = edit.location == option,
-                                    onClick = { onEditChanged(index, edit.copy(location = option)) },
+                                    onClick = {
+                                        onEditChanged(
+                                            index,
+                                            edit.copy(location = option, autoClassified = false)
+                                        )
+                                    },
                                     label = { Text(option.label) }
                                 )
                             }
