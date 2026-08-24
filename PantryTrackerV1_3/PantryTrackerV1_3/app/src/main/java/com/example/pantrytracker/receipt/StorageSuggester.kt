@@ -43,8 +43,8 @@ internal object StorageSuggester {
 
         return when {
             fridgeWords.any { it in value } -> StorageLocation.FRIDGE
-            countertopWords.any { it in value } -> StorageLocation.COUNTERTOP
             pantryWords.any { it in value } -> StorageLocation.PANTRY
+            countertopWords.any { it in value } -> StorageLocation.COUNTERTOP
             else -> null
         }
     }
