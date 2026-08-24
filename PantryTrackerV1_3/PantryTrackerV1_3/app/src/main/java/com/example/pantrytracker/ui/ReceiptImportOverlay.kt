@@ -43,14 +43,23 @@ import com.example.pantrytracker.data.PantryItem
 import com.example.pantrytracker.data.StorageLocation
 import com.example.pantrytracker.receipt.ReceiptProcessor
 import com.example.pantrytracker.receipt.ReceiptScanResult
+import com.example.pantrytracker.receipt.StorageSuggester
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+
+private val receiptLocations = listOf(
+    StorageLocation.PANTRY,
+    StorageLocation.FRIDGE,
+    StorageLocation.COUNTERTOP,
+    StorageLocation.OTHER
+)
 
 private data class ReceiptEdit(
     val original: String,
     val name: String,
     val quantity: String,
+    val location: StorageLocation,
     val selected: Boolean = true
 )
 
@@ -64,7 +73,7 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
     var receiptError by remember { mutableStateOf<String?>(null) }
     var scanResult by remember { mutableStateOf<ReceiptScanResult?>(null) }
     var edits by remember { mutableStateOf<List<ReceiptEdit>>(emptyList()) }
-    var location by remember { mutableStateOf(StorageLocation.PANTRY) }
+    var fallbackLocation by remember { mutableStateOf(StorageLocation.PANTRY) }
 
     val scannerOptions = remember {
         GmsDocumentScannerOptions.Builder()
@@ -100,10 +109,12 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
                     result.onSuccess { parsed ->
                         scanResult = parsed
                         edits = parsed.candidates.map {
+                            val displayName = it.translatedName.ifBlank { it.originalName }
                             ReceiptEdit(
                                 original = it.originalName,
-                                name = it.translatedName,
-                                quantity = formatReceiptQuantity(it.quantity)
+                                name = displayName,
+                                quantity = formatReceiptQuantity(it.quantity),
+                                location = StorageSuggester.suggest(displayName)
                             )
                         }
                     }.onFailure {
@@ -161,7 +172,7 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
             onDismissRequest = {},
             title = { Text("Reading receipt") },
             text = {
-                Text("Extracting grocery items and translating them when needed. The first translation may download a language model.")
+                Text("Extracting grocery items, translating them when needed, and suggesting a storage location for each item.")
             },
             confirmButton = {}
         )
@@ -171,8 +182,8 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
         ReceiptReviewDialog(
             result = result,
             edits = edits,
-            location = location,
-            onLocationChanged = { location = it },
+            fallbackLocation = fallbackLocation,
+            onFallbackLocationChanged = { fallbackLocation = it },
             onEditChanged = { index, updated ->
                 edits = edits.toMutableList().also { it[index] = updated }
             },
@@ -187,7 +198,7 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
                             name = edit.name.trim(),
                             quantity = edit.quantity.replace(',', '.').toDoubleOrNull()?.coerceAtLeast(1.0) ?: 1.0,
                             unit = "item",
-                            location = location.name,
+                            location = edit.location.name,
                             notes = if (edit.original.equals(edit.name, ignoreCase = true)) {
                                 "Added from receipt"
                             } else {
@@ -207,8 +218,8 @@ fun PantryAppWithReceiptImport(viewModel: PantryViewModel) {
 private fun ReceiptReviewDialog(
     result: ReceiptScanResult,
     edits: List<ReceiptEdit>,
-    location: StorageLocation,
-    onLocationChanged: (StorageLocation) -> Unit,
+    fallbackLocation: StorageLocation,
+    onFallbackLocationChanged: (StorageLocation) -> Unit,
     onEditChanged: (Int, ReceiptEdit) -> Unit,
     onDismiss: () -> Unit,
     onAdd: () -> Unit
@@ -228,30 +239,25 @@ private fun ReceiptReviewDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .height(520.dp)
+                    .height(560.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(languageLabel, style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Receipt text is automatically filtered, but stores format receipts differently. Uncheck totals, discounts, deposits, or anything that is not a grocery item.",
+                    "Storage locations are suggested separately for each item. Review the suggestions and change any item before importing.",
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                Text("Store items in", fontWeight = FontWeight.Bold)
+                Text("Fallback for unknown items", fontWeight = FontWeight.Bold)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(
-                        StorageLocation.PANTRY,
-                        StorageLocation.FRIDGE,
-                        StorageLocation.COUNTERTOP,
-                        StorageLocation.OTHER
-                    ).forEach { option ->
+                    receiptLocations.forEach { option ->
                         FilterChip(
-                            selected = option == location,
-                            onClick = { onLocationChanged(option) },
+                            selected = option == fallbackLocation,
+                            onClick = { onFallbackLocationChanged(option) },
                             label = { Text(option.label) }
                         )
                     }
@@ -277,7 +283,15 @@ private fun ReceiptReviewDialog(
                                 OutlinedTextField(
                                     value = edit.name,
                                     onValueChange = { value ->
-                                        onEditChanged(index, edit.copy(name = value))
+                                        val oldSuggestion = StorageSuggester.suggest(edit.name)
+                                        val newSuggestion = StorageSuggester.suggest(value)
+                                        onEditChanged(
+                                            index,
+                                            edit.copy(
+                                                name = value,
+                                                location = if (edit.location == oldSuggestion) newSuggestion else edit.location
+                                            )
+                                        )
                                     },
                                     label = { Text("Item") },
                                     singleLine = true,
@@ -294,6 +308,26 @@ private fun ReceiptReviewDialog(
                                 singleLine = true,
                                 modifier = Modifier.width(82.dp)
                             )
+                        }
+
+                        Text(
+                            "Storage",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(start = 48.dp, top = 4.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .padding(start = 48.dp)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            receiptLocations.forEach { option ->
+                                FilterChip(
+                                    selected = edit.location == option,
+                                    onClick = { onEditChanged(index, edit.copy(location = option)) },
+                                    label = { Text(option.label) }
+                                )
+                            }
                         }
                     }
                 }
